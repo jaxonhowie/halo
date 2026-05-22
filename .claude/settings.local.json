@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(rustc --version)",
+      "Bash(cargo --version)",
+      "Bash(xcode-select -p)",
+      "Bash(swift --version)",
+      "Bash(chmod +x *)",
+      "Bash(.build/debug/Halo)",
+      "Bash(echo \"App launched with PID: $!\")",
+      "Bash(swift *)",
+      "Bash(python3 *)",
+      "Bash(/Users/hongyizheng/AI/projects/halo/build_app.sh release *)",
+      "Bash(sips *)",
+      "Bash(pkill -f \".build/debug/Halo\")",
+      "Bash(pkill -f \"Halo.app\")",
+      "Bash(open *)",
+      "Bash(iconutil -c icns icon.iconset)",
+      "Bash(cp -R .build/Halo.app dmg_staging/)",
+      "Bash(ln -s /Applications dmg_staging/Applications)",
+      "Bash(hdiutil create *)"
+    ]
+  }
+}
