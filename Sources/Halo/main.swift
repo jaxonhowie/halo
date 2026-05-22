@@ -74,6 +74,17 @@ class PetView: SKView {
 
         menu.addItem(NSMenuItem.separator())
 
+        let count = (NSApp.delegate as? AppDelegate)?.waterCount ?? 0
+        let countItem = NSMenuItem(title: "今日喝水: \(count) 次", action: nil, keyEquivalent: "")
+        countItem.isEnabled = false
+        menu.addItem(countItem)
+
+        let remindItem = NSMenuItem(title: "提醒喝水", action: #selector(triggerRemind), keyEquivalent: "r")
+        remindItem.target = self
+        menu.addItem(remindItem)
+
+        menu.addItem(NSMenuItem.separator())
+
         let quitItem = NSMenuItem(title: "退出", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
@@ -88,6 +99,10 @@ class PetView: SKView {
     @objc func setSleep() { catScene.setState(.sleep) }
     @objc func setWantFish() { catScene.setState(.wantFish) }
 
+    @objc func triggerRemind() {
+        (NSApp.delegate as? AppDelegate)?.triggerReminder()
+    }
+
     @objc func quitApp() {
         NSApplication.shared.terminate(nil)
     }
@@ -98,12 +113,41 @@ class PetView: SKView {
 class AppDelegate: NSObject, NSApplicationDelegate {
     var window: PetWindow!
     var petView: PetView!
+    private var workTimer: Timer?
+    private var savedPosition: NSPoint = .zero
+    private let reminderInterval: TimeInterval = 15 * 60
+    private var isReminding = false
+    private var keyMonitor: Any?
+
+    var waterCount: Int {
+        get {
+            let defaults = UserDefaults.standard
+            let savedDate = defaults.string(forKey: "waterDate") ?? ""
+            let today = Self.todayString()
+            if savedDate != today {
+                defaults.set(today, forKey: "waterDate")
+                defaults.set(0, forKey: "waterCount")
+            }
+            return defaults.integer(forKey: "waterCount")
+        }
+        set {
+            let defaults = UserDefaults.standard
+            defaults.set(Self.todayString(), forKey: "waterDate")
+            defaults.set(newValue, forKey: "waterCount")
+        }
+    }
+
+    private static func todayString() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: Date())
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Hide dock icon
         NSApp.setActivationPolicy(.accessory)
 
-        let windowSize = NSSize(width: 160, height: 160)
+        let windowSize = NSSize(width: 208, height: 208)
         let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let windowOrigin = NSPoint(
             x: screenFrame.maxX - windowSize.width - 50,
@@ -135,10 +179,67 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         window.contentView = petView
         window.makeKeyAndOrderFront(nil)
+
+        startKeyboardMonitor()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return true
+    }
+
+    // MARK: - Water Reminder
+
+    func startKeyboardMonitor() {
+        keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] _ in
+            guard let self = self, !self.isReminding, self.workTimer == nil else { return }
+            self.workTimer = Timer.scheduledTimer(withTimeInterval: self.reminderInterval, repeats: false) { [weak self] _ in
+                self?.workTimer = nil
+                self?.triggerReminder()
+            }
+            self.petView.catScene.startCountdown(interval: self.reminderInterval)
+        }
+        print("✓ 键盘监控已启动，\(Int(reminderInterval / 60)) 分钟后提醒喝水")
+    }
+
+    func triggerReminder() {
+        guard !isReminding else { return }
+        isReminding = true
+        workTimer?.invalidate()
+        workTimer = nil
+        petView.catScene.clearCountdown()
+
+        savedPosition = window.frame.origin
+
+        // 移动到屏幕中央
+        if let screen = NSScreen.main {
+            let screenFrame = screen.visibleFrame
+            let centerX = screenFrame.midX - window.frame.width / 2
+            let centerY = screenFrame.midY - window.frame.height / 2
+            window.setFrameOrigin(NSPoint(x: centerX, y: centerY))
+        }
+
+        // 弹出确认框
+        let alert = NSAlert()
+        alert.messageText = "该喝水了哟~"
+        alert.informativeText = "记得休息一下，保持健康！"
+        alert.addButton(withTitle: "喝过啦")
+        alert.alertStyle = .informational
+        alert.window.level = .floating
+        if let iconURL = Bundle.module.url(forResource: "Halo", withExtension: "icns"),
+           let icon = NSImage(contentsOf: iconURL) {
+            alert.icon = icon
+        }
+
+        alert.runModal()
+
+        // 记录喝水
+        waterCount += 1
+
+        // 回到原位
+        window.setFrameOrigin(savedPosition)
+
+        // 清除状态，等待下次键盘输入重新开始
+        isReminding = false
     }
 }
 

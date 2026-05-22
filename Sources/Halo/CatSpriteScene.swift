@@ -15,6 +15,7 @@ class CatSpriteScene: SKScene {
     private lazy var walkTextures = loadWalkTextures()
     private lazy var sleepTextures = loadSleepTextures()
     private lazy var wantFishTextures = loadWantFishTextures()
+    private lazy var jumpTextures = loadJumpTextures()
     private var currentState: CatState = .idle
     private var currentFrame = 0
     private var frameTimer: TimeInterval = 0
@@ -27,13 +28,19 @@ class CatSpriteScene: SKScene {
     private var homeX: CGFloat = 0
     private var pendingStateAfterWalk: CatState?
     private var meowLabel: SKLabelNode?
-    private var zzzNodes: [SKLabelNode] = []
+    private var countdownContainer: SKNode?
+    private var countdownMainLabel: SKLabelNode?
+    private var countdownBorderLabels: [SKLabelNode] = []
+    private var countdownShadowLabel: SKLabelNode?
+    private var countdownStartDate: Date?
+    private var countdownInterval: TimeInterval = 0
+    private var lastCountdownSecond: Int = -1
     private let walkRange: CGFloat = 36.0
-    private let catDisplaySize = CGSize(width: 140, height: 140)
     private let idleMaxDisplaySize = CGSize(width: 144, height: 148)
     private let walkMaxDisplaySize = CGSize(width: 144, height: 148)
     private let sleepMaxDisplaySize = CGSize(width: 144, height: 148)
     private let wantFishMaxDisplaySize = CGSize(width: 144, height: 148)
+    private let jumpMaxDisplaySize = CGSize(width: 144, height: 148)
 
     // Frame rates for each state (fps)
     private var stateFrameRates: [CatState: Double] = [
@@ -60,7 +67,7 @@ class CatSpriteScene: SKScene {
     }
 
     private func setupCat() {
-        let texture = idleTextures.first ?? textureFromPixelData(SpriteData.idle0)
+        let texture = idleTextures.first ?? SKTexture()
         catNode = SKSpriteNode(texture: texture, size: idleDisplaySize(for: texture))
         catNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
         catNode.zPosition = 10
@@ -83,6 +90,10 @@ class CatSpriteScene: SKScene {
 
     private func loadWantFishTextures() -> [SKTexture] {
         loadTextures(named: SpriteData.wantFishTextureNames, subdirectory: "wantFish")
+    }
+
+    private func loadJumpTextures() -> [SKTexture] {
+        loadTextures(named: SpriteData.jumpTextureNames, subdirectory: "jump")
     }
 
     private func loadTextures(named names: [String], subdirectory: String) -> [SKTexture] {
@@ -136,50 +147,17 @@ class CatSpriteScene: SKScene {
         return CGSize(width: textureSize.width * scale, height: textureSize.height * scale)
     }
 
-    private func applyWalkFacing() {
-        // The walk sheet faces left; flip it when moving right.
-        catNode.xScale = walkTextures.isEmpty ? direction : -direction
+    private func jumpDisplaySize(for texture: SKTexture) -> CGSize {
+        let textureSize = texture.size()
+        let scale = min(
+            jumpMaxDisplaySize.width / textureSize.width,
+            jumpMaxDisplaySize.height / textureSize.height
+        )
+        return CGSize(width: textureSize.width * scale, height: textureSize.height * scale)
     }
 
-    private func textureFromPixelData(_ data: [[Int]]) -> SKTexture {
-        let width = data[0].count
-        let height = data.count
-        var pixelData = [UInt8](repeating: 0, count: width * height * 4)
-
-        for row in 0..<height {
-            for col in 0..<width {
-                let colorIndex = data[row][col]
-                let color = CatColors.palette[colorIndex]
-                let offset = (row * width + col) * 4
-                var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-                let rgbColor = color.usingColorSpace(.deviceRGB) ?? color
-                rgbColor.getRed(&r, green: &g, blue: &b, alpha: &a)
-                pixelData[offset]     = UInt8(r * 255)
-                pixelData[offset + 1] = UInt8(g * 255)
-                pixelData[offset + 2] = UInt8(b * 255)
-                pixelData[offset + 3] = UInt8(a * 255)
-            }
-        }
-
-        let provider = CGDataProvider(data: Data(pixelData) as CFData)!
-        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
-        let cgImage = CGImage(
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bitsPerPixel: 32,
-            bytesPerRow: width * 4,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: bitmapInfo,
-            provider: provider,
-            decode: nil,
-            shouldInterpolate: false,
-            intent: .defaultIntent
-        )!
-
-        let texture = SKTexture(cgImage: cgImage)
-        texture.filteringMode = .nearest
-        return texture
+    private func applyWalkFacing() {
+        catNode.xScale = -direction
     }
 
     override func update(_ currentTime: TimeInterval) {
@@ -208,6 +186,9 @@ class CatSpriteScene: SKScene {
         }
 
         // Handle walk movement
+
+        // Update countdown bubble
+        updateCountdown()
         if currentState == .walk {
             catNode.position.x += walkSpeed * direction * CGFloat(dt)
             // Keep the cat pacing around its original resting position.
@@ -246,58 +227,32 @@ class CatSpriteScene: SKScene {
             }
         }
 
-        // Update ZZZ for sleep state
-        if currentState == .sleep {
-            updateZzz(currentTime)
-        }
     }
 
     private func advanceFrame() {
         switch currentState {
         case .idle:
-            let frames = idleTextures.isEmpty ? [textureFromPixelData(SpriteData.idle0)] : idleTextures
+            let frames = idleTextures
             currentFrame = (currentFrame + 1) % frames.count
             catNode.texture = frames[currentFrame]
             catNode.size = idleDisplaySize(for: frames[currentFrame])
         case .walk:
-            if !walkTextures.isEmpty {
-                currentFrame = (currentFrame + 1) % walkTextures.count
-                catNode.texture = walkTextures[currentFrame]
-                catNode.size = walkDisplaySize(for: walkTextures[currentFrame])
-                applyWalkFacing()
-                return
-            }
-            let frames = SpriteData.walkFrames
-            currentFrame = (currentFrame + 1) % frames.count
-            catNode.texture = textureFromPixelData(frames[currentFrame])
-            catNode.size = catDisplaySize
+            currentFrame = (currentFrame + 1) % walkTextures.count
+            catNode.texture = walkTextures[currentFrame]
+            catNode.size = walkDisplaySize(for: walkTextures[currentFrame])
+            applyWalkFacing()
         case .sleep:
-            if !sleepTextures.isEmpty {
-                currentFrame = (currentFrame + 1) % sleepTextures.count
-                catNode.texture = sleepTextures[currentFrame]
-                catNode.size = sleepDisplaySize(for: sleepTextures[currentFrame])
-                return
-            }
-            let frames = SpriteData.sleepFrames
-            currentFrame = (currentFrame + 1) % frames.count
-            catNode.texture = textureFromPixelData(frames[currentFrame])
-            catNode.size = catDisplaySize
+            currentFrame = (currentFrame + 1) % sleepTextures.count
+            catNode.texture = sleepTextures[currentFrame]
+            catNode.size = sleepDisplaySize(for: sleepTextures[currentFrame])
         case .wantFish:
-            if !wantFishTextures.isEmpty {
-                currentFrame = (currentFrame + 1) % wantFishTextures.count
-                catNode.texture = wantFishTextures[currentFrame]
-                catNode.size = wantFishDisplaySize(for: wantFishTextures[currentFrame])
-                return
-            }
-            let frames = idleTextures.isEmpty ? [textureFromPixelData(SpriteData.idle0)] : idleTextures
-            currentFrame = (currentFrame + 1) % frames.count
-            catNode.texture = frames[currentFrame]
-            catNode.size = idleDisplaySize(for: frames[currentFrame])
+            currentFrame = (currentFrame + 1) % wantFishTextures.count
+            catNode.texture = wantFishTextures[currentFrame]
+            catNode.size = wantFishDisplaySize(for: wantFishTextures[currentFrame])
         case .jump:
-            let frames = SpriteData.jumpFrames
-            currentFrame = (currentFrame + 1) % frames.count
-            catNode.texture = textureFromPixelData(frames[currentFrame])
-            catNode.size = catDisplaySize
+            currentFrame = (currentFrame + 1) % jumpTextures.count
+            catNode.texture = jumpTextures[currentFrame]
+            catNode.size = jumpDisplaySize(for: jumpTextures[currentFrame])
         }
     }
 
@@ -313,50 +268,33 @@ class CatSpriteScene: SKScene {
             pendingStateAfterWalk = nil
         }
 
-        // Clear state-specific nodes
-        clearZzz()
         removeMeow()
 
         switch newState {
         case .idle:
-            let texture = idleTextures.first ?? textureFromPixelData(SpriteData.idle0)
+            let texture = idleTextures.first ?? SKTexture()
             catNode.texture = texture
             catNode.size = idleDisplaySize(for: texture)
             catNode.xScale = 1
         case .walk:
-            if let texture = walkTextures.first {
-                catNode.texture = texture
-                catNode.size = walkDisplaySize(for: texture)
-            } else {
-                let frames = SpriteData.walkFrames
-                catNode.texture = textureFromPixelData(frames[0])
-                catNode.size = catDisplaySize
-            }
+            let texture = walkTextures.first ?? SKTexture()
+            catNode.texture = texture
+            catNode.size = walkDisplaySize(for: texture)
             applyWalkFacing()
         case .sleep:
-            if let texture = sleepTextures.first {
-                catNode.texture = texture
-                catNode.size = sleepDisplaySize(for: texture)
-            } else {
-                let frames = SpriteData.sleepFrames
-                catNode.texture = textureFromPixelData(frames[0])
-                catNode.size = catDisplaySize
-            }
+            let texture = sleepTextures.first ?? SKTexture()
+            catNode.texture = texture
+            catNode.size = sleepDisplaySize(for: texture)
             catNode.xScale = 1
         case .wantFish:
-            if let texture = wantFishTextures.first {
-                catNode.texture = texture
-                catNode.size = wantFishDisplaySize(for: texture)
-            } else {
-                let texture = idleTextures.first ?? textureFromPixelData(SpriteData.idle0)
-                catNode.texture = texture
-                catNode.size = idleDisplaySize(for: texture)
-            }
+            let texture = wantFishTextures.first ?? SKTexture()
+            catNode.texture = texture
+            catNode.size = wantFishDisplaySize(for: texture)
             catNode.xScale = 1
         case .jump:
-            let frames = SpriteData.jumpFrames
-            catNode.texture = textureFromPixelData(frames[0])
-            catNode.size = catDisplaySize
+            let texture = jumpTextures.first ?? SKTexture()
+            catNode.texture = texture
+            catNode.size = jumpDisplaySize(for: texture)
             catNode.xScale = 1
             isJumping = true
             jumpVelocity = 200
@@ -427,42 +365,87 @@ class CatSpriteScene: SKScene {
         meowLabel = nil
     }
 
-    // MARK: - ZZZ Animation
+    // MARK: - Countdown Bubble
 
-    private func updateZzz(_ currentTime: TimeInterval) {
-        guard sleepTextures.isEmpty else { return }
-        // Spawn a new Z every 2 seconds
-        if zzzNodes.isEmpty || (currentTime.truncatingRemainder(dividingBy: 2.0) < 0.02) {
-            spawnZzz()
+    func startCountdown(interval: TimeInterval) {
+        countdownStartDate = Date()
+        countdownInterval = interval
+        lastCountdownSecond = -1
+
+        if countdownContainer == nil {
+            let container = SKNode()
+            container.zPosition = 25
+            addChild(container)
+            countdownContainer = container
+
+            // Shadow label (offset down-right, dark gray)
+            let shadow = SKLabelNode(text: "")
+            shadow.fontName = "Helvetica-Bold"
+            shadow.fontSize = 20
+            shadow.fontColor = NSColor(white: 0.2, alpha: 0.6)
+            shadow.position = CGPoint(x: 2, y: -2)
+            container.addChild(shadow)
+            countdownShadowLabel = shadow
+
+            // Border labels (offset in 8 directions, black)
+            let offsets: [(CGFloat, CGFloat)] = [
+                (-1.5, 0), (1.5, 0), (0, -1.5), (0, 1.5),
+                (-1.5, -1.5), (1.5, -1.5), (-1.5, 1.5), (1.5, 1.5)
+            ]
+            for (dx, dy) in offsets {
+                let border = SKLabelNode(text: "")
+                border.fontName = "Helvetica-Bold"
+                border.fontSize = 20
+                border.fontColor = .black
+                border.position = CGPoint(x: dx, y: dy)
+                container.addChild(border)
+                countdownBorderLabels.append(border)
+            }
+
+            // Main label (white)
+            let main = SKLabelNode(text: "")
+            main.fontName = "Helvetica-Bold"
+            main.fontSize = 20
+            main.fontColor = .white
+            container.addChild(main)
+            countdownMainLabel = main
         }
+
+        countdownContainer?.isHidden = false
+        countdownContainer?.position = CGPoint(x: size.width / 2, y: size.height - 25)
+        updateCountdown()
     }
 
-    private func spawnZzz() {
-        guard zzzNodes.count < 3 else { return }
-        let z = SKLabelNode(text: "Z")
-        z.fontName = "Helvetica-Bold"
-        z.fontSize = CGFloat.random(in: 10...16)
-        z.fontColor = NSColor(hex: 0x87CEEB)?.withAlphaComponent(0.7)
-        z.position = CGPoint(
-            x: catNode.position.x + CGFloat.random(in: 15...30),
-            y: catNode.position.y + 30
-        )
-        z.zPosition = 20
-        addChild(z)
-        zzzNodes.append(z)
+    func clearCountdown() {
+        countdownContainer?.isHidden = true
+        countdownMainLabel?.text = ""
+        countdownShadowLabel?.text = ""
+        countdownBorderLabels.forEach { $0.text = "" }
+        countdownStartDate = nil
+        lastCountdownSecond = -1
+    }
 
-        let moveUp = SKAction.moveBy(x: 5, y: 40, duration: 2.0)
-        let fadeOut = SKAction.fadeOut(withDuration: 2.0)
-        let grow = SKAction.scale(to: 1.5, duration: 2.0)
-        let group = SKAction.group([moveUp, fadeOut, grow])
-        let remove = SKAction.removeFromParent()
-        z.run(SKAction.sequence([group, remove])) { [weak self] in
-            self?.zzzNodes.removeAll { $0 === z }
+    private func updateCountdown() {
+        guard let startDate = countdownStartDate else { return }
+        let elapsed = Date().timeIntervalSince(startDate)
+        let remaining = max(0, countdownInterval - elapsed)
+        let seconds = Int(ceil(remaining))
+
+        guard seconds != lastCountdownSecond else { return }
+        lastCountdownSecond = seconds
+
+        if seconds <= 0 {
+            clearCountdown()
+            return
         }
+
+        let minutes = seconds / 60
+        let secs = seconds % 60
+        let text = minutes > 0 ? "💧 \(minutes):\(String(format: "%02d", secs))" : "💧 \(secs)s"
+
+        countdownMainLabel?.text = text
+        countdownShadowLabel?.text = text
+        countdownBorderLabels.forEach { $0.text = text }
     }
 
-    private func clearZzz() {
-        zzzNodes.forEach { $0.removeFromParent() }
-        zzzNodes.removeAll()
-    }
 }
