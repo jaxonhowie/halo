@@ -28,13 +28,18 @@ class CatSpriteScene: SKScene {
     private var homeX: CGFloat = 0
     private var pendingStateAfterWalk: CatState?
     private var meowLabel: SKLabelNode?
-    private var countdownContainer: SKNode?
-    private var countdownMainLabel: SKLabelNode?
-    private var countdownBorderLabels: [SKLabelNode] = []
-    private var countdownShadowLabel: SKLabelNode?
-    private var countdownStartDate: Date?
-    private var countdownInterval: TimeInterval = 0
-    private var lastCountdownSecond: Int = -1
+    // Walk countdown bubble
+    private var walkCountdownContainer: SKNode?
+    private var walkCountdownLabel: SKLabelNode?
+    private var walkCountdownStartDate: Date?
+    private var walkCountdownInterval: TimeInterval = 0
+    private var walkLastCountdownSecond: Int = -1
+    // Water countdown bubble
+    private var waterCountdownContainer: SKNode?
+    private var waterCountdownLabel: SKLabelNode?
+    private var waterCountdownStartDate: Date?
+    private var waterCountdownInterval: TimeInterval = 0
+    private var waterLastCountdownSecond: Int = -1
     private let walkRange: CGFloat = 36.0
     private let idleMaxDisplaySize = CGSize(width: 144, height: 148)
     private let walkMaxDisplaySize = CGSize(width: 144, height: 148)
@@ -187,8 +192,9 @@ class CatSpriteScene: SKScene {
 
         // Handle walk movement
 
-        // Update countdown bubble
-        updateCountdown()
+        // Update countdown bubbles
+        updateWalkCountdown()
+        updateWaterCountdown()
         if currentState == .walk {
             catNode.position.x += walkSpeed * direction * CGFloat(dt)
             // Keep the cat pacing around its original resting position.
@@ -367,75 +373,104 @@ class CatSpriteScene: SKScene {
 
     // MARK: - Countdown Bubble
 
-    func startCountdown(interval: TimeInterval) {
-        countdownStartDate = Date()
-        countdownInterval = interval
-        lastCountdownSecond = -1
+    // MARK: - Walk Countdown
 
-        if countdownContainer == nil {
+    func startWalkCountdown(interval: TimeInterval) {
+        walkCountdownStartDate = Date()
+        walkCountdownInterval = interval
+        walkLastCountdownSecond = -1
+
+        if walkCountdownContainer == nil {
             let container = SKNode()
             container.zPosition = 25
             addChild(container)
-            countdownContainer = container
+            walkCountdownContainer = container
 
-            // Shadow label (offset down-right, dark gray)
-            let shadow = SKLabelNode(text: "")
-            shadow.fontName = "Helvetica-Bold"
-            shadow.fontSize = 20
-            shadow.fontColor = NSColor(white: 0.2, alpha: 0.6)
-            shadow.position = CGPoint(x: 2, y: -2)
-            container.addChild(shadow)
-            countdownShadowLabel = shadow
-
-            // Border labels (offset in 8 directions, black)
-            let offsets: [(CGFloat, CGFloat)] = [
-                (-1.5, 0), (1.5, 0), (0, -1.5), (0, 1.5),
-                (-1.5, -1.5), (1.5, -1.5), (-1.5, 1.5), (1.5, 1.5)
-            ]
-            for (dx, dy) in offsets {
-                let border = SKLabelNode(text: "")
-                border.fontName = "Helvetica-Bold"
-                border.fontSize = 20
-                border.fontColor = .black
-                border.position = CGPoint(x: dx, y: dy)
-                container.addChild(border)
-                countdownBorderLabels.append(border)
-            }
-
-            // Main label (white)
-            let main = SKLabelNode(text: "")
-            main.fontName = "Helvetica-Bold"
-            main.fontSize = 20
-            main.fontColor = .white
-            container.addChild(main)
-            countdownMainLabel = main
+            let label = SKLabelNode(text: "")
+            label.fontName = "Helvetica-Bold"
+            label.fontSize = 20
+            label.fontColor = .white
+            container.addChild(label)
+            walkCountdownLabel = label
         }
 
-        countdownContainer?.isHidden = false
-        countdownContainer?.position = CGPoint(x: size.width / 2, y: size.height - 25)
-        updateCountdown()
+        walkCountdownContainer?.isHidden = false
+        walkCountdownContainer?.position = CGPoint(x: size.width / 2, y: size.height - 25)
+        updateWalkCountdown()
     }
 
-    func clearCountdown() {
-        countdownContainer?.isHidden = true
-        countdownMainLabel?.text = ""
-        countdownShadowLabel?.text = ""
-        countdownBorderLabels.forEach { $0.text = "" }
-        countdownStartDate = nil
-        lastCountdownSecond = -1
+    func clearWalkCountdown() {
+        walkCountdownContainer?.isHidden = true
+        walkCountdownLabel?.text = ""
+        walkCountdownStartDate = nil
+        walkLastCountdownSecond = -1
     }
 
-    private func updateCountdown() {
-        guard let startDate = countdownStartDate else { return }
+    private func updateWalkCountdown() {
+        guard let startDate = walkCountdownStartDate else { return }
         let elapsed = Date().timeIntervalSince(startDate)
-        let remaining = max(0, countdownInterval - elapsed)
+        let remaining = max(0, walkCountdownInterval - elapsed)
         let seconds = Int(ceil(remaining))
 
-        guard seconds != lastCountdownSecond else { return }
-        lastCountdownSecond = seconds
+        guard seconds != walkLastCountdownSecond else { return }
+        walkLastCountdownSecond = seconds
 
         if seconds <= 0 {
-            clearCountdown()
+            clearWalkCountdown()
+            return
+        }
+
+        let minutes = seconds / 60
+        let secs = seconds % 60
+        let text = minutes > 0 ? "🚶 \(minutes):\(String(format: "%02d", secs))" : "🚶 \(secs)s"
+
+        walkCountdownLabel?.text = text
+    }
+
+    // MARK: - Water Countdown
+
+    func startWaterCountdown(interval: TimeInterval) {
+        waterCountdownStartDate = Date()
+        waterCountdownInterval = interval
+        waterLastCountdownSecond = -1
+
+        if waterCountdownContainer == nil {
+            let container = SKNode()
+            container.zPosition = 25
+            addChild(container)
+            waterCountdownContainer = container
+
+            let label = SKLabelNode(text: "")
+            label.fontName = "Helvetica-Bold"
+            label.fontSize = 20
+            label.fontColor = .white
+            container.addChild(label)
+            waterCountdownLabel = label
+        }
+
+        waterCountdownContainer?.isHidden = false
+        waterCountdownContainer?.position = CGPoint(x: size.width / 2, y: size.height - 50)
+        updateWaterCountdown()
+    }
+
+    func clearWaterCountdown() {
+        waterCountdownContainer?.isHidden = true
+        waterCountdownLabel?.text = ""
+        waterCountdownStartDate = nil
+        waterLastCountdownSecond = -1
+    }
+
+    private func updateWaterCountdown() {
+        guard let startDate = waterCountdownStartDate else { return }
+        let elapsed = Date().timeIntervalSince(startDate)
+        let remaining = max(0, waterCountdownInterval - elapsed)
+        let seconds = Int(ceil(remaining))
+
+        guard seconds != waterLastCountdownSecond else { return }
+        waterLastCountdownSecond = seconds
+
+        if seconds <= 0 {
+            clearWaterCountdown()
             return
         }
 
@@ -443,9 +478,7 @@ class CatSpriteScene: SKScene {
         let secs = seconds % 60
         let text = minutes > 0 ? "💧 \(minutes):\(String(format: "%02d", secs))" : "💧 \(secs)s"
 
-        countdownMainLabel?.text = text
-        countdownShadowLabel?.text = text
-        countdownBorderLabels.forEach { $0.text = text }
+        waterCountdownLabel?.text = text
     }
 
 }

@@ -1,6 +1,26 @@
 import Cocoa
 import SpriteKit
 
+// MARK: - Debug Logger
+
+func debugLog(_ message: String) {
+    NSLog("%@", message)
+    let logPath = NSHomeDirectory() + "/halo_debug.log"
+    let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+    let line = "[\(timestamp)] \(message)\n"
+    if let data = line.data(using: .utf8) {
+        if FileManager.default.fileExists(atPath: logPath) {
+            if let fh = FileHandle(forWritingAtPath: logPath) {
+                fh.seekToEndOfFile()
+                fh.write(data)
+                fh.closeFile()
+            }
+        } else {
+            FileManager.default.createFile(atPath: logPath, contents: data)
+        }
+    }
+}
+
 // MARK: - Transparent, Borderless, Always-on-Top Window
 
 class PetWindow: NSWindow {
@@ -74,14 +94,23 @@ class PetView: SKView {
 
         menu.addItem(NSMenuItem.separator())
 
-        let count = (NSApp.delegate as? AppDelegate)?.waterCount ?? 0
-        let countItem = NSMenuItem(title: "今日喝水: \(count) 次", action: nil, keyEquivalent: "")
-        countItem.isEnabled = false
-        menu.addItem(countItem)
+        let waterCount = (NSApp.delegate as? AppDelegate)?.waterCount ?? 0
+        let waterCountItem = NSMenuItem(title: "今日喝水: \(waterCount) 次", action: nil, keyEquivalent: "")
+        waterCountItem.isEnabled = false
+        menu.addItem(waterCountItem)
 
-        let remindItem = NSMenuItem(title: "提醒喝水", action: #selector(triggerRemind), keyEquivalent: "r")
-        remindItem.target = self
-        menu.addItem(remindItem)
+        let waterRemindItem = NSMenuItem(title: "提醒喝水", action: #selector(triggerWaterRemind), keyEquivalent: "r")
+        waterRemindItem.target = self
+        menu.addItem(waterRemindItem)
+
+        let walkCount = (NSApp.delegate as? AppDelegate)?.walkCount ?? 0
+        let walkCountItem = NSMenuItem(title: "今日走动: \(walkCount) 次", action: nil, keyEquivalent: "")
+        walkCountItem.isEnabled = false
+        menu.addItem(walkCountItem)
+
+        let walkRemindItem = NSMenuItem(title: "提醒走动", action: #selector(triggerWalkRemind), keyEquivalent: "w")
+        walkRemindItem.target = self
+        menu.addItem(walkRemindItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -99,8 +128,12 @@ class PetView: SKView {
     @objc func setSleep() { catScene.setState(.sleep) }
     @objc func setWantFish() { catScene.setState(.wantFish) }
 
-    @objc func triggerRemind() {
-        (NSApp.delegate as? AppDelegate)?.triggerReminder()
+    @objc func triggerWaterRemind() {
+        (NSApp.delegate as? AppDelegate)?.triggerWaterReminder()
+    }
+
+    @objc func triggerWalkRemind() {
+        (NSApp.delegate as? AppDelegate)?.triggerWalkReminder()
     }
 
     @objc func quitApp() {
@@ -113,10 +146,13 @@ class PetView: SKView {
 class AppDelegate: NSObject, NSApplicationDelegate {
     var window: PetWindow!
     var petView: PetView!
-    private var workTimer: Timer?
+    private var waterTimer: Timer?
+    private var walkTimer: Timer?
     private var savedPosition: NSPoint = .zero
-    private let reminderInterval: TimeInterval = 15 * 60
-    private var isReminding = false
+    private let waterReminderInterval: TimeInterval = 15 * 60
+    private let walkReminderInterval: TimeInterval = 60 * 60
+    private var isWaterReminding = false
+    private var isWalkReminding = false
     private var keyMonitor: Any?
 
     var waterCount: Int {
@@ -134,6 +170,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let defaults = UserDefaults.standard
             defaults.set(Self.todayString(), forKey: "waterDate")
             defaults.set(newValue, forKey: "waterCount")
+        }
+    }
+
+    var walkCount: Int {
+        get {
+            let defaults = UserDefaults.standard
+            let savedDate = defaults.string(forKey: "walkDate") ?? ""
+            let today = Self.todayString()
+            if savedDate != today {
+                defaults.set(today, forKey: "walkDate")
+                defaults.set(0, forKey: "walkCount")
+            }
+            return defaults.integer(forKey: "walkCount")
+        }
+        set {
+            let defaults = UserDefaults.standard
+            defaults.set(Self.todayString(), forKey: "walkDate")
+            defaults.set(newValue, forKey: "walkCount")
         }
     }
 
@@ -180,33 +234,53 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.contentView = petView
         window.makeKeyAndOrderFront(nil)
 
+        checkAccessibilityPermission()
         startKeyboardMonitor()
+    }
+
+    private func checkAccessibilityPermission() {
+        let trusted = AXIsProcessTrusted()
+        debugLog("Halo: 辅助功能权限状态 = \(trusted)")
+        if !trusted {
+            debugLog("Halo: 请前往 系统设置 → 隐私与安全性 → 辅助功能，添加 Halo 应用")
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): false] as CFDictionary
+            AXIsProcessTrustedWithOptions(options)
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return true
     }
 
-    // MARK: - Water Reminder
+    // MARK: - Keyboard Monitor
 
     func startKeyboardMonitor() {
         keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] _ in
-            guard let self = self, !self.isReminding, self.workTimer == nil else { return }
-            self.workTimer = Timer.scheduledTimer(withTimeInterval: self.reminderInterval, repeats: false) { [weak self] _ in
-                self?.workTimer = nil
-                self?.triggerReminder()
+            guard let self = self else { return }
+            if !self.isWalkReminding, self.walkTimer == nil {
+                self.walkTimer = Timer.scheduledTimer(withTimeInterval: self.walkReminderInterval, repeats: false) { [weak self] _ in
+                    self?.walkTimer = nil
+                    self?.triggerWalkReminder()
+                }
+                self.petView.catScene.startWalkCountdown(interval: self.walkReminderInterval)
             }
-            self.petView.catScene.startCountdown(interval: self.reminderInterval)
+            if !self.isWaterReminding, self.waterTimer == nil {
+                self.waterTimer = Timer.scheduledTimer(withTimeInterval: self.waterReminderInterval, repeats: false) { [weak self] _ in
+                    self?.waterTimer = nil
+                    self?.triggerWaterReminder()
+                }
+                self.petView.catScene.startWaterCountdown(interval: self.waterReminderInterval)
+            }
         }
-        print("✓ 键盘监控已启动，\(Int(reminderInterval / 60)) 分钟后提醒喝水")
+        debugLog("Halo: 键盘监控已启动，\(Int(waterReminderInterval / 60)) 分钟后提醒喝水，\(Int(walkReminderInterval / 60)) 分钟后提醒走动")
     }
 
-    func triggerReminder() {
-        guard !isReminding else { return }
-        isReminding = true
-        workTimer?.invalidate()
-        workTimer = nil
-        petView.catScene.clearCountdown()
+    func triggerWaterReminder() {
+        guard !isWaterReminding else { return }
+        isWaterReminding = true
+        waterTimer?.invalidate()
+        waterTimer = nil
+        petView.catScene.clearWaterCountdown()
 
         savedPosition = window.frame.origin
 
@@ -239,7 +313,48 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.setFrameOrigin(savedPosition)
 
         // 清除状态，等待下次键盘输入重新开始
-        isReminding = false
+        isWaterReminding = false
+    }
+
+    func triggerWalkReminder() {
+        guard !isWalkReminding else { return }
+        isWalkReminding = true
+        walkTimer?.invalidate()
+        walkTimer = nil
+        petView.catScene.clearWalkCountdown()
+
+        savedPosition = window.frame.origin
+
+        // 移动到屏幕中央
+        if let screen = NSScreen.main {
+            let screenFrame = screen.visibleFrame
+            let centerX = screenFrame.midX - window.frame.width / 2
+            let centerY = screenFrame.midY - window.frame.height / 2
+            window.setFrameOrigin(NSPoint(x: centerX, y: centerY))
+        }
+
+        // 弹出确认框
+        let alert = NSAlert()
+        alert.messageText = "该起身走动啦~"
+        alert.informativeText = "久坐伤身，起来活动一下吧！"
+        alert.addButton(withTitle: "走过了")
+        alert.alertStyle = .informational
+        alert.window.level = .floating
+        if let iconURL = Bundle.module.url(forResource: "Halo", withExtension: "icns"),
+           let icon = NSImage(contentsOf: iconURL) {
+            alert.icon = icon
+        }
+
+        alert.runModal()
+
+        // 记录走动
+        walkCount += 1
+
+        // 回到原位
+        window.setFrameOrigin(savedPosition)
+
+        // 清除状态，等待下次键盘输入重新开始
+        isWalkReminding = false
     }
 }
 
