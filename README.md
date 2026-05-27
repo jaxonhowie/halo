@@ -90,3 +90,9 @@ Sources/Halo/
 - **喝水提醒** — `NSEvent.addGlobalMonitorForEvents` 监听键盘，`Timer` 计时，`NSAlert` 弹窗，`UserDefaults` 持久化喝水统计
 - **走动提醒** — 独立 `Timer` 计时（60 分钟），独立倒计时气泡，独立弹窗确认
 - **倒计时气泡** — 多层 `SKLabelNode` 叠加实现描边（8 方向黑色偏移）+ 阴影（右下灰色偏移）
+
+## 致谢
+
+- 代码由 [Claude Code](https://claude.ai/code) + Mimo-v2.5-pro 生成
+- 素材图由 GPT-Image2 生成
+- 剪切处理使用 [Aseprite](https://www.aseprite.org/) + [PixelLab](https://www.pixellab.ai/) 完成
