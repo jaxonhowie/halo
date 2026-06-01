@@ -317,7 +317,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var isWalkReminding = false
     private var keyMonitor: Any?
     // Session timer
-    private var sessionStartDate: Date?
+    var sessionStartDate: Date?
     private var lastKeyboardActivity: Date?
     private var sessionIdleTimer: Timer?
     private let sessionIdleTimeout: TimeInterval = 10 * 60
@@ -368,7 +368,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             defaults.set(today, forKey: "workDate")
             defaults.set(0, forKey: "todayWorkSeconds")
         }
-        return defaults.integer(forKey: "todayWorkSeconds")
+        let saved = defaults.integer(forKey: "todayWorkSeconds")
+        // Include current running session time
+        if let start = sessionStartDate, let lastActive = lastKeyboardActivity {
+            return saved + Int(lastActive.timeIntervalSince(start))
+        }
+        return saved
     }
 
     private static func todayString() -> String {
