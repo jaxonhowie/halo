@@ -40,6 +40,9 @@ class CatSpriteScene: SKScene {
     private var waterCountdownStartDate: Date?
     private var waterCountdownInterval: TimeInterval = 0
     private var waterLastCountdownSecond: Int = -1
+    // Session timer display
+    private var sessionStartDate: Date?
+    private var sessionTimerLabel: SKLabelNode?
     private let walkRange: CGFloat = 36.0
     private let idleMaxDisplaySize = CGSize(width: 144, height: 148)
     private let walkMaxDisplaySize = CGSize(width: 144, height: 148)
@@ -195,6 +198,7 @@ class CatSpriteScene: SKScene {
         // Update countdown bubbles
         updateWalkCountdown()
         updateWaterCountdown()
+        updateSessionTimer()
         if currentState == .walk {
             catNode.position.x += walkSpeed * direction * CGFloat(dt)
             // Keep the cat pacing around its original resting position.
@@ -479,6 +483,95 @@ class CatSpriteScene: SKScene {
         let text = minutes > 0 ? "💧 \(minutes):\(String(format: "%02d", secs))" : "💧 \(secs)s"
 
         waterCountdownLabel?.text = text
+    }
+
+    // MARK: - Session Timer
+
+    func startSessionTimer() {
+        sessionStartDate = Date()
+        if sessionTimerLabel == nil {
+            let label = SKLabelNode(text: "")
+            label.fontName = "Helvetica-Bold"
+            label.fontSize = 14
+            label.fontColor = NSColor.white.withAlphaComponent(0.8)
+            label.position = CGPoint(x: size.width / 2, y: size.height - 100)
+            label.zPosition = 25
+            addChild(label)
+            sessionTimerLabel = label
+        }
+        sessionTimerLabel?.isHidden = false
+        updateSessionTimer()
+    }
+
+    func stopSessionTimer() {
+        sessionStartDate = nil
+        sessionTimerLabel?.isHidden = true
+        sessionTimerLabel?.text = ""
+    }
+
+    private func updateSessionTimer() {
+        guard let startDate = sessionStartDate else { return }
+        let elapsed = Date().timeIntervalSince(startDate)
+        let totalMinutes = Int(elapsed) / 60
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+
+        let text: String
+        if hours > 0 {
+            text = "💻 \(hours):\(String(format: "%02d", minutes))"
+        } else {
+            text = "💻 \(minutes)m"
+        }
+        sessionTimerLabel?.text = text
+    }
+
+    // MARK: - Pet Interaction (Double-click)
+
+    func handlePet() {
+        showHearts()
+        showPurrBubble()
+    }
+
+    private func showHearts() {
+        let hearts = ["❤️", "💕", "💗", "💖", "🧡"]
+        for i in 0..<5 {
+            let label = SKLabelNode(text: hearts[i])
+            label.fontSize = 16
+            label.zPosition = 20
+            let offsetX = CGFloat.random(in: -30...30)
+            let offsetY = CGFloat.random(in: 10...30)
+            label.position = CGPoint(
+                x: catNode.position.x + offsetX,
+                y: catNode.position.y + 40 + CGFloat(i) * 10 + offsetY
+            )
+            label.alpha = 0.0
+            addChild(label)
+
+            let delay = SKAction.wait(forDuration: Double(i) * 0.08)
+            let fadeIn = SKAction.fadeIn(withDuration: 0.15)
+            let moveUp = SKAction.moveBy(x: CGFloat.random(in: -10...10), y: 30, duration: 0.8)
+            let fadeOut = SKAction.fadeOut(withDuration: 0.6)
+            let group = SKAction.group([moveUp, fadeOut])
+            let remove = SKAction.removeFromParent()
+            label.run(SKAction.sequence([delay, fadeIn, group, remove]))
+        }
+    }
+
+    private func showPurrBubble() {
+        let label = SKLabelNode(text: "咕噜咕噜~")
+        label.fontName = "Helvetica-Bold"
+        label.fontSize = 14
+        label.fontColor = NSColor(hex: 0xFFB6C1)
+        label.position = CGPoint(x: catNode.position.x, y: catNode.position.y + 55)
+        label.zPosition = 20
+        label.alpha = 1.0
+        addChild(label)
+
+        let moveUp = SKAction.moveBy(x: 0, y: 20, duration: 1.0)
+        let fadeOut = SKAction.fadeOut(withDuration: 1.0)
+        let group = SKAction.group([moveUp, fadeOut])
+        let remove = SKAction.removeFromParent()
+        label.run(SKAction.sequence([group, remove]))
     }
 
 }
