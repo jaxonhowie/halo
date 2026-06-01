@@ -40,9 +40,6 @@ class CatSpriteScene: SKScene {
     private var waterCountdownStartDate: Date?
     private var waterCountdownInterval: TimeInterval = 0
     private var waterLastCountdownSecond: Int = -1
-    // Session timer display
-    private var sessionStartDate: Date?
-    private var sessionTimerLabel: SKLabelNode?
     private let walkRange: CGFloat = 36.0
     private let idleMaxDisplaySize = CGSize(width: 144, height: 148)
     private let walkMaxDisplaySize = CGSize(width: 144, height: 148)
@@ -198,7 +195,6 @@ class CatSpriteScene: SKScene {
         // Update countdown bubbles
         updateWalkCountdown()
         updateWaterCountdown()
-        updateSessionTimer()
         if currentState == .walk {
             catNode.position.x += walkSpeed * direction * CGFloat(dt)
             // Keep the cat pacing around its original resting position.
@@ -483,46 +479,6 @@ class CatSpriteScene: SKScene {
         let text = minutes > 0 ? "💧 \(minutes):\(String(format: "%02d", secs))" : "💧 \(secs)s"
 
         waterCountdownLabel?.text = text
-    }
-
-    // MARK: - Session Timer
-
-    func startSessionTimer() {
-        sessionStartDate = Date()
-        if sessionTimerLabel == nil {
-            let label = SKLabelNode(text: "")
-            label.fontName = "Helvetica-Bold"
-            label.fontSize = 14
-            label.fontColor = NSColor.white.withAlphaComponent(0.8)
-            label.position = CGPoint(x: size.width / 2, y: size.height - 100)
-            label.zPosition = 25
-            addChild(label)
-            sessionTimerLabel = label
-        }
-        sessionTimerLabel?.isHidden = false
-        updateSessionTimer()
-    }
-
-    func stopSessionTimer() {
-        sessionStartDate = nil
-        sessionTimerLabel?.isHidden = true
-        sessionTimerLabel?.text = ""
-    }
-
-    private func updateSessionTimer() {
-        guard let startDate = sessionStartDate else { return }
-        let elapsed = Date().timeIntervalSince(startDate)
-        let totalMinutes = Int(elapsed) / 60
-        let hours = totalMinutes / 60
-        let minutes = totalMinutes % 60
-
-        let text: String
-        if hours > 0 {
-            text = "💻 \(hours):\(String(format: "%02d", minutes))"
-        } else {
-            text = "💻 \(minutes)m"
-        }
-        sessionTimerLabel?.text = text
     }
 
     // MARK: - Pet Interaction (Double-click)

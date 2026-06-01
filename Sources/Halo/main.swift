@@ -483,7 +483,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.lastKeyboardActivity = Date()
             if self.sessionStartDate == nil {
                 self.sessionStartDate = Date()
-                self.petView.catScene.startSessionTimer()
             }
             self.sessionIdleTimer?.invalidate()
             self.sessionIdleTimer = Timer.scheduledTimer(withTimeInterval: self.sessionIdleTimeout, repeats: false) { [weak self] _ in
@@ -526,7 +525,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         sessionStartDate = nil
         sessionIdleTimer = nil
-        petView.catScene.stopSessionTimer()
     }
 
     // MARK: - Stats
