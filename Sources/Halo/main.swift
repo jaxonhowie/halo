@@ -108,7 +108,7 @@ class PetView: SKView {
 
         menu.addItem(NSMenuItem.separator())
 
-        let statsItem = NSMenuItem(title: "查看统计", action: #selector(showStats), keyEquivalent: "s")
+        let statsItem = NSMenuItem(title: "查看统计", action: #selector(showStats), keyEquivalent: "")
         statsItem.target = self
         menu.addItem(statsItem)
 
