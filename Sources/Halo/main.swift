@@ -4,21 +4,16 @@ import WebKit
 
 // MARK: - Debug Logger
 
+private let debugLogPath = NSHomeDirectory() + "/halo_debug.log"
+
 func debugLog(_ message: String) {
     NSLog("%@", message)
-    let logPath = NSHomeDirectory() + "/halo_debug.log"
-    let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
-    let line = "[\(timestamp)] \(message)\n"
-    if let data = line.data(using: .utf8) {
-        if FileManager.default.fileExists(atPath: logPath) {
-            if let fh = FileHandle(forWritingAtPath: logPath) {
-                fh.seekToEndOfFile()
-                fh.write(data)
-                fh.closeFile()
-            }
-        } else {
-            FileManager.default.createFile(atPath: logPath, contents: data)
-        }
+    let ts = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+    guard let data = "[\(ts)] \(message)\n".data(using: .utf8) else { return }
+    if let fh = FileHandle(forWritingAtPath: debugLogPath) {
+        fh.seekToEndOfFile(); fh.write(data); fh.closeFile()
+    } else {
+        FileManager.default.createFile(atPath: debugLogPath, contents: data)
     }
 }
 
@@ -89,35 +84,20 @@ class PetView: SKView {
 
     private func showContextMenu(_ event: NSEvent) {
         let menu = NSMenu()
-
-        let idleItem = NSMenuItem(title: "待机", action: #selector(setIdle), keyEquivalent: "")
-        idleItem.target = self
-        menu.addItem(idleItem)
-
-        let walkItem = NSMenuItem(title: "走动", action: #selector(setWalk), keyEquivalent: "")
-        walkItem.target = self
-        menu.addItem(walkItem)
-
-        let sleepItem = NSMenuItem(title: "睡觉", action: #selector(setSleep), keyEquivalent: "")
-        sleepItem.target = self
-        menu.addItem(sleepItem)
-
-        let wantFishItem = NSMenuItem(title: "想吃鱼", action: #selector(setWantFish), keyEquivalent: "")
-        wantFishItem.target = self
-        menu.addItem(wantFishItem)
-
+        for (title, action) in [("待机", #selector(setIdle)), ("走动", #selector(setWalk)),
+                                 ("睡觉", #selector(setSleep)), ("想吃鱼", #selector(setWantFish))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
         menu.addItem(NSMenuItem.separator())
-
         let statsItem = NSMenuItem(title: "查看统计", action: #selector(showStats), keyEquivalent: "")
         statsItem.target = self
         menu.addItem(statsItem)
-
         menu.addItem(NSMenuItem.separator())
-
         let quitItem = NSMenuItem(title: "退出", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
-
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
@@ -376,10 +356,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return saved
     }
 
-    private static func todayString() -> String {
+    private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: Date())
+        return f
+    }()
+
+    private static func todayString() -> String {
+        dateFormatter.string(from: Date())
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -518,15 +502,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func endSession() {
         if let start = sessionStartDate, let lastActive = lastKeyboardActivity {
-            let elapsed = lastActive.timeIntervalSince(start)
+            let elapsed = Int(lastActive.timeIntervalSince(start))
             let defaults = UserDefaults.standard
             let today = Self.todayString()
-            let dateKey = "workDate"
-            let secondsKey = "todayWorkSeconds"
-            let savedDate = defaults.string(forKey: dateKey) ?? ""
-            let existing = savedDate == today ? defaults.integer(forKey: secondsKey) : 0
-            defaults.set(today, forKey: dateKey)
-            defaults.set(existing + Int(elapsed), forKey: secondsKey)
+            let existing = (defaults.string(forKey: "workDate") ?? "") == today ? defaults.integer(forKey: "todayWorkSeconds") : 0
+            defaults.set(today, forKey: "workDate")
+            defaults.set(existing + elapsed, forKey: "todayWorkSeconds")
         }
         sessionStartDate = nil
         sessionIdleTimer = nil
@@ -542,85 +523,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statsPanel?.showPanel(relativeTo: window)
     }
 
+    private func showAlert(message: String, info: String, button: String) {
+        savedPosition = window.frame.origin
+        if let screen = NSScreen.main {
+            let sf = screen.visibleFrame
+            window.setFrameOrigin(NSPoint(x: sf.midX - window.frame.width / 2, y: sf.midY - window.frame.height / 2))
+        }
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = info
+        alert.addButton(withTitle: button)
+        alert.alertStyle = .informational
+        alert.window.level = .floating
+        if let url = Bundle.module.url(forResource: "Halo", withExtension: "icns"),
+           let icon = NSImage(contentsOf: url) { alert.icon = icon }
+        alert.runModal()
+        window.setFrameOrigin(savedPosition)
+    }
+
     func triggerWaterReminder() {
         guard !isWaterReminding else { return }
         isWaterReminding = true
-        waterTimer?.invalidate()
-        waterTimer = nil
+        waterTimer?.invalidate(); waterTimer = nil
         petView.catScene.clearWaterCountdown()
-
-        savedPosition = window.frame.origin
-
-        // 移动到屏幕中央
-        if let screen = NSScreen.main {
-            let screenFrame = screen.visibleFrame
-            let centerX = screenFrame.midX - window.frame.width / 2
-            let centerY = screenFrame.midY - window.frame.height / 2
-            window.setFrameOrigin(NSPoint(x: centerX, y: centerY))
-        }
-
-        // 弹出确认框
-        let alert = NSAlert()
-        alert.messageText = "该喝水了哟~"
-        alert.informativeText = "记得休息一下，保持健康！"
-        alert.addButton(withTitle: "喝过啦")
-        alert.alertStyle = .informational
-        alert.window.level = .floating
-        if let iconURL = Bundle.module.url(forResource: "Halo", withExtension: "icns"),
-           let icon = NSImage(contentsOf: iconURL) {
-            alert.icon = icon
-        }
-
-        alert.runModal()
-
-        // 记录喝水
+        showAlert(message: "该喝水了哟~", info: "记得休息一下，保持健康！", button: "喝过啦")
         waterCount += 1
-
-        // 回到原位
-        window.setFrameOrigin(savedPosition)
-
-        // 清除状态，等待下次键盘输入重新开始
         isWaterReminding = false
     }
 
     func triggerWalkReminder() {
         guard !isWalkReminding else { return }
         isWalkReminding = true
-        walkTimer?.invalidate()
-        walkTimer = nil
+        walkTimer?.invalidate(); walkTimer = nil
         petView.catScene.clearWalkCountdown()
-
-        savedPosition = window.frame.origin
-
-        // 移动到屏幕中央
-        if let screen = NSScreen.main {
-            let screenFrame = screen.visibleFrame
-            let centerX = screenFrame.midX - window.frame.width / 2
-            let centerY = screenFrame.midY - window.frame.height / 2
-            window.setFrameOrigin(NSPoint(x: centerX, y: centerY))
-        }
-
-        // 弹出确认框
-        let alert = NSAlert()
-        alert.messageText = "该起身走动啦~"
-        alert.informativeText = "久坐伤身，起来活动一下吧！"
-        alert.addButton(withTitle: "走过了")
-        alert.alertStyle = .informational
-        alert.window.level = .floating
-        if let iconURL = Bundle.module.url(forResource: "Halo", withExtension: "icns"),
-           let icon = NSImage(contentsOf: iconURL) {
-            alert.icon = icon
-        }
-
-        alert.runModal()
-
-        // 记录走动
+        showAlert(message: "该起身走动啦~", info: "久坐伤身，起来活动一下吧！", button: "走过了")
         walkCount += 1
-
-        // 回到原位
-        window.setFrameOrigin(savedPosition)
-
-        // 清除状态，等待下次键盘输入重新开始
         isWalkReminding = false
     }
 }
