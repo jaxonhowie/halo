@@ -29,32 +29,40 @@ class PetWindow: NSWindow {
 class PetView: SKView {
     var catScene: CatSpriteScene!
     private var isDragging = false
-    private var dragStart: NSPoint = .zero
-    private var windowDragStart: NSPoint = .zero
+    private var dragOffset: NSPoint = .zero
     private var pendingSingleClick: DispatchWorkItem?
 
     override func mouseDown(with event: NSEvent) {
-        let location = convert(event.locationInWindow, from: nil)
         isDragging = false
-        dragStart = location
-        windowDragStart = window?.frame.origin ?? .zero
+        // 记录鼠标按下时相对于窗口左下角的偏移
+        guard let window = window else { return }
+        let screenLocation = NSEvent.mouseLocation
+        dragOffset = NSPoint(
+            x: screenLocation.x - window.frame.origin.x,
+            y: screenLocation.y - window.frame.origin.y
+        )
     }
 
     override func mouseDragged(with event: NSEvent) {
-        let location = convert(event.locationInWindow, from: nil)
-        let dx = location.x - dragStart.x
-        let dy = location.y - dragStart.y
-
-        if !isDragging && (abs(dx) > 3 || abs(dy) > 3) {
-            isDragging = true
-            pendingSingleClick?.cancel()
-            pendingSingleClick = nil
+        if !isDragging {
+            let screenLocation = NSEvent.mouseLocation
+            guard let window = window else { return }
+            let expectedX = window.frame.origin.x + dragOffset.x
+            let expectedY = window.frame.origin.y + dragOffset.y
+            let dx = screenLocation.x - expectedX
+            let dy = screenLocation.y - expectedY
+            if abs(dx) > 3 || abs(dy) > 3 {
+                isDragging = true
+                pendingSingleClick?.cancel()
+                pendingSingleClick = nil
+            }
         }
 
         if isDragging {
+            let screenLocation = NSEvent.mouseLocation
             let newOrigin = NSPoint(
-                x: windowDragStart.x + dx,
-                y: windowDragStart.y + dy
+                x: screenLocation.x - dragOffset.x,
+                y: screenLocation.y - dragOffset.y
             )
             window?.setFrameOrigin(newOrigin)
         }
@@ -317,8 +325,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         set {
             let defaults = UserDefaults.standard
-            defaults.set(Self.todayString(), forKey: "waterDate")
-            defaults.set(newValue, forKey: "waterCount")
+            let savedDate = defaults.string(forKey: "waterDate") ?? ""
+            let today = Self.todayString()
+            let base = (savedDate == today) ? defaults.integer(forKey: "waterCount") : 0
+            defaults.set(today, forKey: "waterDate")
+            defaults.set(base + 1, forKey: "waterCount")
         }
     }
 
@@ -335,8 +346,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         set {
             let defaults = UserDefaults.standard
-            defaults.set(Self.todayString(), forKey: "walkDate")
-            defaults.set(newValue, forKey: "walkCount")
+            let savedDate = defaults.string(forKey: "walkDate") ?? ""
+            let today = Self.todayString()
+            let base = savedDate == today ? defaults.integer(forKey: "walkCount") : 0
+            defaults.set(today, forKey: "walkDate")
+            defaults.set(base + 1, forKey: "walkCount")
         }
     }
 
