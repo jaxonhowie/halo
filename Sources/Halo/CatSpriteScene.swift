@@ -1,9 +1,6 @@
 import ImageIO
 import SpriteKit
-
-enum CatState: CaseIterable {
-    case idle, walk, sleep, wantFish, jump
-}
+import HaloCore
 
 // MARK: - Countdown Bubble
 

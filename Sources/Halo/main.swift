@@ -1,6 +1,7 @@
 import Cocoa
 import SpriteKit
 import WebKit
+import HaloCore
 
 // MARK: - Debug Logger
 
